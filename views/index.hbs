@@ -1,0 +1,109 @@
+<canvas id="renderCanvas"></canvas>
+<script>
+    var scene; 
+
+    window.addEventListener('DOMContentLoaded', async function () {
+      // get the canvas DOM element
+      var canvas = document.getElementById('renderCanvas');
+
+      // load the 3D engine
+      var engine = new BABYLON.Engine(canvas, true);
+
+      // createScene function that creates and return the scene
+      var createScene = async () => {
+        scene = new BABYLON.Scene(engine);
+        socket.on('move-player', data => {
+          loadCube(scene, data)
+        })
+
+        socket.on('remove-cube', id => {
+          let c = scene.getMeshByName(id);
+          c.dispose();
+        })
+
+        var light = new BABYLON.HemisphericLight("HemiLight", new BABYLON.Vector3(0, 1, 0), scene);
+
+        var personaje;
+
+        let { meshes: newMeshes, animationGroups } = await BABYLON.SceneLoader.ImportMeshAsync("", "images/", "b.glb", scene);
+
+        personaje = BABYLON.MeshBuilder.CreateCapsule("collider", { height: 4, radius: 1.5}, scene);
+        personaje.name = id;
+        personaje.animationGroups = animationGroups;
+        personaje.animationGroups[1].play(true);
+        personaje.position.y = 0.75;
+        personaje.speed = 0.2;
+        personaje.frontVector = new BABYLON.Vector3(1, 0, 0);
+        personaje.checkCollisions = true;
+        personaje.rotationQuaternion = undefined;
+        personaje.isVisible = false;
+        makeEnviroment();
+
+        var playerCollider = newMeshes[1];
+        playerCollider.setParent(personaje);
+        playerCollider.position = new BABYLON.Vector3(0,0,0);
+
+        createFollowCamera(scene, canvas, personaje);
+
+        //set up input map
+        var inputMap = {};
+        scene.actionManager = new BABYLON.ActionManager(scene);
+        scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyDownTrigger, function(evt) {
+          inputMap[evt.sourceEvent.key] = evt.sourceEvent.type == "keydown";
+
+        }));
+        scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyUpTrigger, function(evt) {
+          inputMap[evt.sourceEvent.key] = evt.sourceEvent.type == "keydown";
+
+        }));
+
+        window.addEventListener('keyup', function (e) {
+          if (e.key === 'w' || e.key === 'ArrowUp') {
+            personaje.animationGroups[3].stop()
+          } else if (e.key === 's' || e.key === 'ArrowDown') {
+            //personaje.animationGroups[0].stop()
+          }
+        })
+
+        scene.onBeforeRenderObservable.add(() => {
+          if (personaje) {
+            if (inputMap["w"] || inputMap["ArrowDown"]) {
+              personaje.animationGroups[3].start()
+              personaje.moveWithCollisions(personaje.frontVector.multiplyByFloats(personaje.speed, personaje.speed, personaje.speed));
+              socket.emit('move', { key: "w", id: id, position: personaje.position, rotation: personaje.rotation})
+            }
+            if (inputMap["s"] || inputMap["ArrowUp"]) {
+              //personaje.animationGroups[0].start()
+              //personaje.moveWithCollisions(personaje.frontVector.multiplyByFloats(-personaje.speed / 2, -personaje.speed / 2, -personaje.speed / 2));
+              //socket.emit('move', { key: "s", id: id, position: personaje.position, rotation: personaje.rotation})
+            }
+            if (inputMap["a"] || inputMap["ArrowLeft"]) {
+              personaje.rotation.y -= .05;
+              personaje.frontVector = new BABYLON.Vector3(Math.sin(personaje.rotation.y), 0, Math.cos(personaje.rotation.y));
+              socket.emit('move', { id: id, position: personaje.position, rotation: personaje.rotation})
+            }
+            if (inputMap["d"] || inputMap["ArrowRight"]) {
+              personaje.rotation.y += .05;
+              
+              personaje.frontVector = new BABYLON.Vector3(Math.sin(personaje.rotation.y), 0, Math.cos(personaje.rotation.y));
+              socket.emit('move', { id: id, position: personaje.position, rotation: personaje.rotation})
+            }
+          }
+        })
+        return scene;
+      };
+
+      // call the createScene function
+      var scene = await createScene();
+      createPointerLock(scene);
+      // run the render loop
+      engine.runRenderLoop(function() {
+        scene.render();
+      });
+
+      // the canvas/window resize event handler
+      window.addEventListener('resize', function() {
+        engine.resize();
+      });
+    })
+  </script>
